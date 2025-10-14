@@ -1,0 +1,758 @@
+//@version=6
+indicator("Asset Rotation System [InvestorUnknown] — ChartSymbol + USDC.D — 3 Strategies", max_bars_back=5000)
+import TradingView/ta/9
+
+//──────────────────────────────
+// FUNCTIONS
+//──────────────────────────────
+
+// Function to remove parts of the ticker
+f_remove_exchange_name(name) =>
+    parts = str.split(name, ":")
+    result = array.size(parts) > 1 ? array.get(parts, 1) : name
+    result
+
+// Function to get color based on the value of the signal
+f_trend_col(x) =>
+    x > 0 ? color.green : color.red
+
+// RSI
+f_rsi(src, len) =>
+    rsi = ta.rsi(src, len)
+    rsi > 50 ? 1 : 0
+
+// CCI
+f_cci(src, len) =>
+    cci = ta.cci(src, len)
+    cci > 0 ? 1 : 0
+
+// SuperTrend
+f_supertrend(factor, len) =>
+    [st, dir] = ta.supertrend(factor, len)
+    -dir > 0 ? 1 : 0
+
+// DMI
+f_dmi(len) =>
+    [dip, dim, adx] = ta.dmi(len, 1)
+    dip > dim ? 1 : 0
+
+// Parabolic SAR
+f_psar(start, increment, max) =>
+    sar = ta.sar(start, increment, max)
+    sar < close ? 1 : 0
+
+// Mini trend system
+f_all(rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max) =>
+    r_val = f_rsi(rsi_src, rsi_len)
+    c_val = f_cci(cci_src, cci_len)
+    st_val = f_supertrend(st_factor, st_len)
+    d_val = f_dmi(dmi_len)
+    psar_val = f_psar(sar_start, sar_inc, sar_max)
+    (r_val + c_val + st_val + d_val + psar_val) > 0 ? 1 : 0
+
+// Function to return opposite of the signal
+f_oppose(x) =>
+    x == 1 ? 0 : (x == 0 ? 1 : 0)
+
+// --- NEW: CM Combined RSI & Stoch MTF Pro ---
+// (Using a simple condition: if both RSI and Stoch are above 50, then signal = 1)
+f_CM_RSIStoch(src, rsi_len, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val) =>
+    rsi_val     = ta.rsi(src, rsi_len)
+    stoch_val   = ta.stoch(high, low, src, stoch_len)  // 4-argument stoch call in v6
+    stoch_k_val = ta.sma(stoch_val, stoch_k)
+    trend_up = rsi_val > 50 and stoch_k_val > 50
+    trend_up ? 1 : 0
+
+// Function to perform trend analysis
+f_trend(clas, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val) =>
+    sig = switch clas
+        "RSI"         => f_rsi(rsi_src, rsi_len)
+        "CCI"         => f_cci(cci_src, cci_len)
+        "SuperTrend"  => f_supertrend(st_factor, st_len)
+        "DMI"         => f_dmi(dmi_len)
+        "PSAR"        => f_psar(sar_start, sar_inc, sar_max)
+        "CM_RSIStoch" => f_CM_RSIStoch(rsi_src, rsi_len, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val)
+        "All"         => f_all(rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max)
+    [sig, f_oppose(sig)]
+
+// Function to calculate the age of the ticker
+f_age() =>
+    bars = bar_index + 1
+    math.min(bars, 5000)
+
+// Function to return the daily return as a decimal number
+f_roc() =>
+    roc = ta.roc(close, 1)
+    roc / 100
+
+// Function to count bars since a condition
+f_since(active) =>
+    var count = 0
+    if active
+        count += 1
+    count > 2 ? count - 1 : count
+
+// Function to find the ticker with the highest value among 10 pairs (ticker, value)
+f_BestPerformingAsset(ticker1, v1, ticker2, v2, ticker3, v3, ticker4, v4, ticker5, v5, ticker6, v6, ticker7, v7, ticker8, v8, ticker9, v9, ticker10, v10) =>
+    var tickers = array.new_string(10, "")
+    var values  = array.new_float(10, 0.0)
+    array.set(tickers, 0, ticker1), array.set(values, 0, v1)
+    array.set(tickers, 1, ticker2), array.set(values, 1, v2)
+    array.set(tickers, 2, ticker3), array.set(values, 2, v3)
+    array.set(tickers, 3, ticker4), array.set(values, 3, v4)
+    array.set(tickers, 4, ticker5), array.set(values, 4, v5)
+    array.set(tickers, 5, ticker6), array.set(values, 5, v6)
+    array.set(tickers, 6, ticker7), array.set(values, 6, v7)
+    array.set(tickers, 7, ticker8), array.set(values, 7, v8)
+    array.set(tickers, 8, ticker9), array.set(values, 8, v9)
+    array.set(tickers, 9, ticker10), array.set(values, 9, v10)
+    var highestIndex = 0
+    for i = 0 to 9
+        if array.get(values, i) > array.get(values, highestIndex)
+            highestIndex := i
+    array.get(tickers, highestIndex)
+
+// Function to calculate strategy equity (with max drawdown) for 10 assets
+f_equity(ticker1, ticker2, ticker3, ticker4, ticker5, ticker6, ticker7, ticker8, ticker9, ticker10, best_asset, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, backtest) =>
+    var float equity = na
+    var float peak_equity = na
+    var float max_drawdown = 0.0
+    if backtest
+        a = switch best_asset[1]
+            ticker1  => r1
+            ticker2  => r2
+            ticker3  => r3
+            ticker4  => r4
+            ticker5  => r5
+            ticker6  => r6
+            ticker7  => r7
+            ticker8  => r8
+            ticker9  => r9
+            ticker10 => r10
+            "USD"    => 0
+        equity := na(equity[1]) ? 1 : equity[1] * (1 + a)
+        peak_equity := math.max(na(peak_equity) ? equity : peak_equity, equity)
+        current_drawdown = peak_equity > 0 ? (peak_equity - equity) / peak_equity : 0
+        if current_drawdown > max_drawdown
+            max_drawdown := current_drawdown
+        if equity > peak_equity
+            peak_equity := equity
+    else
+        equity := 1
+    [equity, math.round(max_drawdown, 4)]
+
+// Function to calculate buy and hold equity (with max drawdown)
+f_buy_and_hold(r, backtest) =>
+    var float equity = na
+    var float peak_equity = na
+    var float max_drawdown = 0.0
+    if backtest
+        equity := na(equity[1]) ? 1 : equity[1] * (1 + r)
+        peak_equity := math.max(na(peak_equity) ? equity : peak_equity, equity)
+        current_drawdown = peak_equity > 0 ? (peak_equity - equity) / peak_equity : 0
+        if current_drawdown > max_drawdown
+            max_drawdown := current_drawdown
+        if equity > peak_equity
+            peak_equity := equity
+    else
+        equity := 1
+    [equity, math.round(max_drawdown, 4)]
+
+// Function to return color for equity curve for visualizing the best performing asset for 10 assets
+f_best_asset_col(string ticker1, string ticker2, string ticker3, string ticker4, string ticker5, string ticker6, string ticker7, string ticker8, string ticker9, string ticker10, string best_asset, bool backtest, color[] colors) =>
+    if backtest
+        switch best_asset
+            ticker1  => array.get(colors, 0)
+            ticker2  => array.get(colors, 1)
+            ticker3  => array.get(colors, 2)
+            ticker4  => array.get(colors, 3)
+            ticker5  => array.get(colors, 4)
+            ticker6  => array.get(colors, 5)
+            ticker7  => array.get(colors, 6)
+            ticker8  => array.get(colors, 7)
+            ticker9  => array.get(colors, 8)
+            ticker10 => array.get(colors, 9)
+            "USD"    => array.get(colors, 10)
+    else
+        color.new(color.white, 100)
+
+// Function to calculate performance metrics from an equity curve
+f_PerformanceMetrics(base, Lookback, backtest, max_drawdown) =>
+    pos_sum = 0.0
+    neg_sum = 0.0
+    pos_count = 0
+    neg_count = 0
+    returns_sum = 0.0
+    returns_squared_sum = 0.0
+    pos_returns_squared_sum = 0.0
+    neg_returns_squared_sum = 0.0
+    lookback = Lookback
+    if Lookback > 4999
+        lookback := 4998
+    if backtest
+        for i = 0 to lookback - 1
+            r_val = (base[i] - base[i+1]) / base[i+1]
+            returns_sum += r_val
+            returns_squared_sum += r_val * r_val
+            if r_val > 0
+                pos_sum += r_val
+                pos_count += 1
+                pos_returns_squared_sum += r_val * r_val
+            else if r_val < 0
+                neg_sum += r_val
+                neg_count += 1
+                neg_returns_squared_sum += r_val * r_val
+    export_array = array.new_float(10, 0.0)
+    mean_all = math.round(returns_sum / lookback, 4)
+    mean_pos = pos_count != 0 ? math.round(pos_sum / pos_count, 4) : na
+    mean_neg = neg_count != 0 ? math.round(neg_sum / neg_count, 4) : na
+    stddev_all = math.round(math.sqrt((returns_squared_sum - (returns_sum * returns_sum) / lookback) / lookback), 4)
+    stddev_pos = pos_count != 0 ? math.round(math.sqrt((pos_returns_squared_sum - (pos_sum * pos_sum) / pos_count) / pos_count), 4) : na
+    stddev_neg = neg_count != 0 ? math.round(math.sqrt((neg_returns_squared_sum - (neg_sum * neg_sum) / neg_count) / neg_count), 4) : na
+    sharpe_ratio = math.round((mean_all / stddev_all) * math.sqrt(255), 3)
+    sortino_ratio = math.round((mean_all / stddev_neg) * math.sqrt(255), 3)
+    omega_ratio = math.round(pos_sum / math.abs(neg_sum), 3)
+    array.set(export_array, 0, mean_all * 100)
+    array.set(export_array, 1, mean_pos * 100)
+    array.set(export_array, 2, mean_neg * 100)
+    array.set(export_array, 3, stddev_all * 100)
+    array.set(export_array, 4, stddev_pos * 100)
+    array.set(export_array, 5, stddev_neg * 100)
+    array.set(export_array, 6, sharpe_ratio)
+    array.set(export_array, 7, sortino_ratio)
+    array.set(export_array, 8, omega_ratio)
+    array.set(export_array, 9, max_drawdown * 100)
+    export_array
+
+// Function to plot Performance Metrics Table for 10 assets
+f_PerfMetricTable(ticker1, ticker2, ticker3, ticker4, ticker5, ticker6, ticker7, ticker8, ticker9, ticker10, strategy, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, colors) =>
+    // Create a table with 12 columns and 15 rows.
+    // (Columns: 0..11, so total 12; Rows: 0..14, so 15 rows)
+    var table p = table.new(position.top_left, 12, 15, border_width=1, frame_width=1, frame_color=color.white)
+    table.cell(p, 0, 0, "Performance Metrics", text_color=color.white, bgcolor=color.gray)
+    table.merge_cells(p, 0, 0, 10, 0)
+    table.cell(p, 1, 1, "Strategy", text_color=array.get(colors, 10))
+    table.cell(p, 2, 1, str.tostring(f_remove_exchange_name(ticker1)), text_color=array.get(colors, 0))
+    table.cell(p, 3, 1, str.tostring(f_remove_exchange_name(ticker2)), text_color=array.get(colors, 1))
+    table.cell(p, 4, 1, str.tostring(f_remove_exchange_name(ticker3)), text_color=array.get(colors, 2))
+    table.cell(p, 5, 1, str.tostring(f_remove_exchange_name(ticker4)), text_color=array.get(colors, 3))
+    table.cell(p, 6, 1, str.tostring(f_remove_exchange_name(ticker5)), text_color=array.get(colors, 4))
+    table.cell(p, 7, 1, str.tostring(f_remove_exchange_name(ticker6)), text_color=array.get(colors, 5))
+    table.cell(p, 8, 1, str.tostring(f_remove_exchange_name(ticker7)), text_color=array.get(colors, 6))
+    table.cell(p, 9, 1, str.tostring(f_remove_exchange_name(ticker8)), text_color=array.get(colors, 7))
+    table.cell(p, 10, 1, str.tostring(f_remove_exchange_name(ticker9)), text_color=array.get(colors, 8))
+    table.cell(p, 11, 1, str.tostring(f_remove_exchange_name(ticker10)), text_color=array.get(colors, 9))
+    for i = 0 to array.size(strategy) - 1
+        metric = switch i
+            0  => "Mean (All Returns) %"
+            1  => "Mean (Positive Returns) %"
+            2  => "Mean (Negative Returns) %"
+            3  => "STDEV (All Returns) %"
+            4  => "STDEV (Positive Returns) %"
+            5  => "STDEV (Negative Returns) %"
+            6  => "Sharpe Ratio"
+            7  => "Sortino Ratio"
+            8  => "Omega Ratio"
+            9  => "Maximum Drawdown %"
+        table.cell(p, 0, i + 2, metric, text_color=array.get(colors, 10))
+        table.cell(p, 1, i + 2, str.tostring(array.get(strategy, i)), text_color=array.get(colors, 10))
+        table.cell(p, 2, i + 2, str.tostring(array.get(a1, i)), text_color=array.get(colors, 0))
+        table.cell(p, 3, i + 2, str.tostring(array.get(a2, i)), text_color=array.get(colors, 1))
+        table.cell(p, 4, i + 2, str.tostring(array.get(a3, i)), text_color=array.get(colors, 2))
+        table.cell(p, 5, i + 2, str.tostring(array.get(a4, i)), text_color=array.get(colors, 3))
+        table.cell(p, 6, i + 2, str.tostring(array.get(a5, i)), text_color=array.get(colors, 4))
+        table.cell(p, 7, i + 2, str.tostring(array.get(a6, i)), text_color=array.get(colors, 5))
+        table.cell(p, 8, i + 2, str.tostring(array.get(a7, i)), text_color=array.get(colors, 6))
+        table.cell(p, 9, i + 2, str.tostring(array.get(a8, i)), text_color=array.get(colors, 7))
+        table.cell(p, 10, i + 2, str.tostring(array.get(a9, i)), text_color=array.get(colors, 8))
+        table.cell(p, 11, i + 2, str.tostring(array.get(a10, i)), text_color=array.get(colors, 9))
+    p
+
+//──────────────────────────────
+// INPUTS
+//──────────────────────────────
+
+// show asset
+show_asset1 = input.bool(true, "Show Asset 1", group="Display")
+show_asset2 = input.bool(true, "Show Asset 2", group="Display")
+show_asset3 = input.bool(true, "Show Asset 3", group="Display")
+show_asset4 = input.bool(true, "Show Asset 4", group="Display")
+show_asset5 = input.bool(true, "Show Asset 5", group="Display")
+show_asset6 = input.bool(true, "Show Asset 6", group="Display")
+show_asset7 = input.bool(true, "Show Asset 7", group="Display")
+show_asset8 = input.bool(true, "Show Asset 8", group="Display")
+show_asset9 = input.bool(true, "Show Asset 9", group="Display")
+show_asset10 = input.bool(true, "Show Asset 10", group="Display")
+
+// Display Options (default OFF)
+showAssetLabels = input.bool(false, "Show Asset Labels", group="Display")
+showTables      = input.bool(false, "Show Tables", group="Display")
+
+// Tickers - Modified: ticker1 uses chart symbol, others use USDC.D
+ticker1 = syminfo.tickerid
+ticker2 = input.symbol("CRYPTOCAP:USDC.D", "Asset 2", group="Tickers", display=display.none)
+ticker3 = input.symbol("CRYPTOCAP:USDC.D", "Asset 3", group="Tickers", display=display.none)
+ticker4 = input.symbol("CRYPTOCAP:USDC.D", "Asset 4", group="Tickers", display=display.none)
+ticker5 = input.symbol("CRYPTOCAP:USDC.D", "Asset 5", group="Tickers", display=display.none)
+ticker6 = input.symbol("CRYPTOCAP:USDC.D", "Asset 6", group="Tickers", display=display.none)
+ticker7 = input.symbol("CRYPTOCAP:USDC.D", "Asset 7", group="Tickers", display=display.none)
+ticker8 = input.symbol("CRYPTOCAP:USDC.D", "Asset 8", group="Tickers", display=display.none)
+ticker9 = input.symbol("CRYPTOCAP:USDC.D", "Asset 9", group="Tickers", display=display.none)
+ticker10 = input.symbol("CRYPTOCAP:USDC.D", "Asset 10", group="Tickers", display=display.none)
+
+// General Settings
+use_custom_startdate = input.bool(false, "Use Custom Starting Date for Backtest", group="General Settings", inline="CC")
+custom_startdate = input.time(timestamp("2023-1-1"), "", group="General Settings", inline="CC", display=display.none)
+plot_metric_table = input.bool(true, "Plot Perf. Metrics Table", group="General Settings")
+
+// Strategy Colors
+psar_strategy_col = input.color(color.new(color.blue, 0), "PSAR Strategy", group="Strategy Colors", inline="S1")
+cm_strategy_col = input.color(color.new(color.orange, 0), "CM_RSIStoch Strategy", group="Strategy Colors", inline="S2")
+all_strategy_col = input.color(color.new(color.white, 0), "All Indicators Strategy", group="Strategy Colors", inline="S3")
+
+// Color Settings
+asset1_col = input.color(color.aqua, "Asset 1", group="Color Settings", inline="C1")
+asset2_col = input.color(color.red, "Asset 2", group="Color Settings", inline="C1")
+asset3_col = input.color(color.green, "Asset 3", group="Color Settings", inline="C1")
+asset4_col = input.color(color.purple, "Asset 4", group="Color Settings", inline="C2")
+asset5_col = input.color(color.orange, "Asset 5", group="Color Settings", inline="C2")
+asset6_col = input.color(color.yellow, "Asset 6", group="Color Settings", inline="C2")
+asset7_col = input.color(color.blue, "Asset 7", group="Color Settings", inline="C3")
+asset8_col = input.color(color.fuchsia, "Asset 8", group="Color Settings", inline="C4")
+asset9_col = input.color(color.teal, "Asset 9", group="Color Settings", inline="C4")
+asset10_col = input.color(color.lime, "Asset 10", group="Color Settings", inline="C5")
+usd_col = input.color(color.black, "USD", group="Color Settings", inline="C3")
+tab_lab_text_col = input.color(color.black, "Table & Lable Text", group="Color Settings", inline="C3")
+
+// RSI Settings
+rsi_src = input.source(close, "RSI Source", group="RSI Settings", display=display.none)
+rsi_len = input.int(14, "RSI Length", group="RSI Settings", display=display.none)
+
+// CCI Settings
+cci_src = input.source(close, "CCI Source", group="CCI Settings", display=display.none)
+cci_len = input.int(20, "CCI Length", group="CCI Settings", display=display.none)
+
+// SuperTrend Settings
+st_factor = input.float(2.0, "SuperTrend Factor", group="SuperTrend Settings", display=display.none, step=0.1)
+st_len = input.int(14, "SuperTrend Length", group="SuperTrend Settings", display=display.none)
+
+// DMI Settings
+dmi_len = input.int(14, "DMI Length", group="DMI Settings", display=display.none)
+
+// Parabolic SAR Settings
+sar_start = input.float(0.02, "PSAR Start", group="Parabolic SAR Settings", display=display.none, step=0.001)
+sar_inc = input.float(0.02, "PSAR Increment", group="Parabolic SAR Settings", display=display.none, step=0.001)
+sar_max = input.float(0.2, "PSAR Max Value", group="Parabolic SAR Settings", display=display.none, step=0.001)
+
+// New Stochastic Settings (for CM_RSIStoch)
+stoch_len = input.int(14, "Stoch Length", minval=1, group="Stoch Settings")
+stoch_k = input.int(3, "Stoch %K Smoothing", minval=1, group="Stoch Settings")
+stoch_d = input.int(3, "Stoch %D Smoothing", minval=1, group="Stoch Settings")
+rsi_lower_val = input.float(30, "RSI Lower", group="Stoch Settings")
+stoch_lower_val = input.float(20, "Stoch Lower", group="Stoch Settings")
+
+//──────────────────────────────
+// TREND ANALYSIS
+//──────────────────────────────
+
+// Asset 1 against all assets
+[c1_2, c2_1] = request.security(str.tostring(ticker1 + "/" + ticker2), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c1_3, c3_1] = request.security(str.tostring(ticker1 + "/" + ticker3), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c1_4, c4_1] = request.security(str.tostring(ticker1 + "/" + ticker4), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c1_5, c5_1] = request.security(str.tostring(ticker1 + "/" + ticker5), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c1_6, c6_1] = request.security(str.tostring(ticker1 + "/" + ticker6), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c1_7, c7_1] = request.security(str.tostring(ticker1 + "/" + ticker7), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c1_8, c8_1] = request.security(str.tostring(ticker1 + "/" + ticker8), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c1_9, c9_1] = request.security(str.tostring(ticker1 + "/" + ticker9), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c1_10, c10_1] = request.security(str.tostring(ticker1 + "/" + ticker10), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c1_usd, cusd_1] = request.security(ticker1, "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c1_age, r1] = request.security(ticker1, "", [f_age(), f_roc()])
+
+// Asset 2 against remaining assets
+[c2_3, c3_2] = request.security(str.tostring(ticker2 + "/" + ticker3), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c2_4, c4_2] = request.security(str.tostring(ticker2 + "/" + ticker4), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c2_5, c5_2] = request.security(str.tostring(ticker2 + "/" + ticker5), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c2_6, c6_2] = request.security(str.tostring(ticker2 + "/" + ticker6), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c2_7, c7_2] = request.security(str.tostring(ticker2 + "/" + ticker7), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c2_8, c8_2] = request.security(str.tostring(ticker2 + "/" + ticker8), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c2_9, c9_2] = request.security(str.tostring(ticker2 + "/" + ticker9), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c2_10, c10_2] = request.security(str.tostring(ticker2 + "/" + ticker10), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c2_usd, cusd_2] = request.security(ticker2, "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c2_age, r2] = request.security(ticker2, "", [f_age(), f_roc()])
+
+// Asset 3 against remaining assets
+[c3_4, c4_3] = request.security(str.tostring(ticker3 + "/" + ticker4), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c3_5, c5_3] = request.security(str.tostring(ticker3 + "/" + ticker5), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c3_6, c6_3] = request.security(str.tostring(ticker3 + "/" + ticker6), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c3_7, c7_3] = request.security(str.tostring(ticker3 + "/" + ticker7), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c3_8, c8_3] = request.security(str.tostring(ticker3 + "/" + ticker8), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c3_9, c9_3] = request.security(str.tostring(ticker3 + "/" + ticker9), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c3_10, c10_3] = request.security(str.tostring(ticker3 + "/" + ticker10), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c3_usd, cusd_3] = request.security(ticker3, "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c3_age, r3] = request.security(ticker3, "", [f_age(), f_roc()])
+
+// Asset 4 against remaining assets
+[c4_5, c5_4] = request.security(str.tostring(ticker4 + "/" + ticker5), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c4_6, c6_4] = request.security(str.tostring(ticker4 + "/" + ticker6), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c4_7, c7_4] = request.security(str.tostring(ticker4 + "/" + ticker7), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c4_8, c8_4] = request.security(str.tostring(ticker4 + "/" + ticker8), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c4_9, c9_4] = request.security(str.tostring(ticker4 + "/" + ticker9), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c4_10, c10_4] = request.security(str.tostring(ticker4 + "/" + ticker10), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c4_usd, cusd_4] = request.security(ticker4, "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c4_age, r4] = request.security(ticker4, "", [f_age(), f_roc()])
+
+// Asset 5 against remaining assets
+[c5_6, c6_5] = request.security(str.tostring(ticker5 + "/" + ticker6), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c5_7, c7_5] = request.security(str.tostring(ticker5 + "/" + ticker7), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c5_8, c8_5] = request.security(str.tostring(ticker5 + "/" + ticker8), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c5_9, c9_5] = request.security(str.tostring(ticker5 + "/" + ticker9), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c5_10, c10_5] = request.security(str.tostring(ticker5 + "/" + ticker10), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c5_usd, cusd_5] = request.security(ticker5, "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c5_age, r5] = request.security(ticker5, "", [f_age(), f_roc()])
+
+//─────────────────────────────────────────
+// Asset 6 Comparisons (Asset 6 vs. assets 7-10 & USD)
+//─────────────────────────────────────────
+[c6_7, c7_6] = request.security(str.tostring(ticker6 + "/" + ticker7), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c6_8, c8_6] = request.security(str.tostring(ticker6 + "/" + ticker8), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max,  stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c6_9, c9_6] = request.security(str.tostring(ticker6 + "/" + ticker9), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len,  st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c6_10, c10_6] = request.security(str.tostring(ticker6 + "/" + ticker10), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c6_usd, cusd_6] = request.security(ticker6, "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c6_age, r6] = request.security(ticker6, "", [f_age(), f_roc()])
+
+//─────────────────────────────────────────
+// Asset 7 Comparisons (Asset 7 vs. assets 8-10 & USD)
+//─────────────────────────────────────────
+[c7_8, c8_7] = request.security(str.tostring(ticker7 + "/" + ticker8), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c7_9, c9_7] = request.security(str.tostring(ticker7 + "/" + ticker9), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len,  st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max,  stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c7_10, c10_7] = request.security(str.tostring(ticker7 + "/" + ticker10), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c7_usd, cusd_7] = request.security(ticker7, "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len,  st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c7_age, r7] = request.security(ticker7, "", [f_age(), f_roc()])
+
+//─────────────────────────────────────────
+// Asset 8 Comparisons (Asset 8 vs. assets 9-10 & USD)
+//─────────────────────────────────────────
+[c8_9, c9_8] = request.security(str.tostring(ticker8 + "/" + ticker9), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c8_10, c10_8] = request.security(str.tostring(ticker8 + "/" + ticker10), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c8_usd, cusd_8] = request.security(ticker8, "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max,  stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c8_age, r8] = request.security(ticker8, "", [f_age(), f_roc()])
+
+//─────────────────────────────────────────
+// Asset 9 Comparisons (Asset 9 vs. asset 10 & USD)
+//─────────────────────────────────────────
+[c9_10, c10_9] = request.security(str.tostring(ticker9 + "/" + ticker10), "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c9_usd, cusd_9] = request.security(ticker9, "", f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len, st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c9_age, r9] = request.security(ticker9, "", [f_age(), f_roc()])
+
+//─────────────────────────────────────────
+// Asset 10 Comparisons (Asset 10 vs. USD)
+//─────────────────────────────────────────
+[c10_usd, cusd_10] = request.security(ticker10, "",  f_trend(trend_classification, rsi_src, rsi_len, cci_src, cci_len,  st_factor, st_len, dmi_len, sar_start, sar_inc, sar_max, stoch_len, stoch_k, rsi_lower_val, stoch_lower_val))
+[c10_age, r10] = request.security(ticker10, "", [f_age(), f_roc()])
+
+// For asset 1, assume you have signals for asset1 vs asset2 through asset10, and its signal vs USD (cusd_1)
+a1_score = (c1_2 + c1_3 + c1_4 + c1_5 + c1_6 + c1_7 + c1_8 + c1_9 + c1_10 + cusd_1) // totalComparisons
+
+// For asset 2, include all comparisons with asset 1, and assets 3 through 10, plus USD:
+a2_score = (c2_1 + c2_3 + c2_4 + c2_5 + c2_6 + c2_7 + c2_8 + c2_9 + c2_10 + cusd_2) //totalComparisons
+
+// Repeat similarly for all assets:
+a3_score = (c3_1 + c3_2 + c3_4 + c3_5 + c3_6 + c3_7 + c3_8 + c3_9 + c3_10 + cusd_3) // totalComparisons
+a4_score = (c4_1 + c4_2 + c4_3 + c4_5 + c4_6 + c4_7 + c4_8 + c4_9 + c4_10 + cusd_4) // totalComparisons
+a5_score = (c5_1 + c5_2 + c5_3 + c5_4 + c5_6 + c5_7 + c5_8 + c5_9 + c5_10 + cusd_5) // totalComparisons
+a6_score = (c6_1 + c6_2 + c6_3 + c6_4 + c6_5 + c6_7 + c6_8 + c6_9 + c6_10 + cusd_6) // totalComparisons
+a7_score = (c7_1 + c7_2 + c7_3 + c7_4 + c7_5 + c7_6 + c7_8 + c7_9 + c7_10 + cusd_7) // totalComparisons
+a8_score = (c8_1 + c8_2 + c8_3 + c8_4 + c8_5 + c8_6 + c8_7 + c8_9 + c8_10 + cusd_8) // totalComparisons
+a9_score = (c9_1 + c9_2 + c9_3 + c9_4 + c9_5 + c9_6 + c9_7 + c9_8 + c9_10 + cusd_9) // totalComparisons
+a10_score = (c10_1 + c10_2 + c10_3 + c10_4 + c10_5 + c10_6 + c10_7 + c10_8 + c10_9 + cusd_10) // totalComparisons
+// Optionally, if you want to also compute a combined USD score in a similar fashion:
+usd_score = (cusd_1 + cusd_2 + cusd_3 + cusd_4 + cusd_5 + cusd_6 + cusd_7 + cusd_8 + cusd_9 + cusd_10) // totalComparisons
+// Determining "Optimal" Asset (comparing 10 assets + USD)
+best_asset = f_BestPerformingAsset(ticker1, a1_score, ticker2, a2_score, ticker3, a3_score, ticker4, a4_score, ticker5, a5_score, ticker6, a6_score, ticker7, a7_score, ticker8, a8_score, ticker9, a9_score, ticker10, a10_score)
+
+// Calculation of equity curves and maximum drawdown for Strategy and Buy and Hold for each asset
+bool backtest = c1_age > 1 and c2_age > 1 and c3_age > 1 and c4_age > 1 and c5_age > 1 and c6_age > 1 and c7_age > 1 and c8_age > 1 and c9_age > 1 and c10_age > 1 and (not use_custom_startdate or time > custom_startdate)
+
+[eq, dd_eq] = f_equity(ticker1, ticker2, ticker3, ticker4, ticker5, ticker6, ticker7, ticker8, ticker9, ticker10, best_asset, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, backtest)
+[bah1, dd1] = f_buy_and_hold(r1, backtest)
+[bah2, dd2] = f_buy_and_hold(r2, backtest)
+[bah3, dd3] = f_buy_and_hold(r3, backtest)
+[bah4, dd4] = f_buy_and_hold(r4, backtest)
+[bah5, dd5] = f_buy_and_hold(r5, backtest)
+[bah6, dd6] = f_buy_and_hold(r6, backtest)
+[bah7, dd7] = f_buy_and_hold(r7, backtest)
+[bah8, dd8] = f_buy_and_hold(r8, backtest)
+[bah9, dd9] = f_buy_and_hold(r9, backtest)
+[bah10, dd10] = f_buy_and_hold(r10, backtest)
+
+// Calculating Performance metrics of Strategy and Buy and Hold for each asset
+since = f_since(backtest)
+a_strategy = f_PerformanceMetrics(eq, since, backtest, dd_eq)
+a1 = f_PerformanceMetrics(bah1, since, backtest, dd1)
+a2 = f_PerformanceMetrics(bah2, since, backtest, dd2)
+a3 = f_PerformanceMetrics(bah3, since, backtest, dd3)
+a4 = f_PerformanceMetrics(bah4, since, backtest, dd4)
+a5 = f_PerformanceMetrics(bah5, since, backtest, dd5)
+a6 = f_PerformanceMetrics(bah6, since, backtest, dd6)
+a7 = f_PerformanceMetrics(bah7, since, backtest, dd7)
+a8 = f_PerformanceMetrics(bah8, since, backtest, dd8)
+a9 = f_PerformanceMetrics(bah9, since, backtest, dd9)
+a10 = f_PerformanceMetrics(bah10, since, backtest, dd10)
+
+//──────────────────────────────
+// PLOTS AND TABLES
+//──────────────────────────────
+
+// Place all colors into an array for table and functions
+colors = array.new_color(11)
+array.set(colors, 0, asset1_col)
+array.set(colors, 1, asset2_col)
+array.set(colors, 2, asset3_col)
+array.set(colors, 3, asset4_col)
+array.set(colors, 4, asset5_col)
+array.set(colors, 5, asset6_col)
+array.set(colors, 6, asset7_col)
+array.set(colors, 7, asset8_col)
+array.set(colors, 8, asset9_col)
+array.set(colors, 9, asset10_col)
+array.set(colors, 10, usd_col)
+
+// Plotting equity curves
+plot(eq, "Best Asset Equity", color = f_best_asset_col(ticker1, ticker2, ticker3, ticker4, ticker5, ticker6, ticker7, ticker8, ticker9, ticker10, best_asset, backtest, colors), linewidth = 3)
+plot(bah1, "Buy and Hold Asset1", color = backtest ? color.new(asset1_col, 30) : color.new(color.white, 100))
+plot(bah2, "Buy and Hold Asset2", color = backtest ? color.new(asset2_col, 30) : color.new(color.white, 100))
+plot(bah3, "Buy and Hold Asset3", color = backtest ? color.new(asset3_col, 30) : color.new(color.white, 100))
+plot(bah4, "Buy and Hold Asset4", color = backtest ? color.new(asset4_col, 30) : color.new(color.white, 100))
+plot(bah5, "Buy and Hold Asset5", color = backtest ? color.new(asset5_col, 30) : color.new(color.white, 100))
+plot(bah6, "Buy and Hold Asset6", color = backtest ? color.new(asset6_col, 30) : color.new(color.white, 100))
+plot(bah7, "Buy and Hold Asset7", color = backtest ? color.new(asset7_col, 30) : color.new(color.white, 100))
+plot(bah8, "Buy and Hold Asset8", color = backtest ? color.new(asset8_col, 30) : color.new(color.white, 100))
+plot(bah9, "Buy and Hold Asset9", color = backtest ? color.new(asset9_col, 30) : color.new(color.white, 100))
+plot(bah10, "Buy and Hold Asset10", color = backtest ? color.new(asset10_col, 30) : color.new(color.white, 100))
+
+
+
+// Labels for each asset: only create/update if the corresponding asset is shown.
+// Declare global label variables (if not declared earlier).
+var label asset1Label = na
+var label asset2Label = na
+var label asset3Label = na
+var label asset4Label = na
+var label asset5Label = na
+var label asset6Label = na
+var label asset7Label = na
+var label asset8Label = na
+var label asset9Label = na
+var label asset10Label = na
+var label strategyLabel = na
+
+
+if backtest and barstate.islast
+    if na(strategyLabel)
+        strategyLabel := label.new(bar_index + 5, eq, str.tostring(f_remove_exchange_name(best_asset)), color = f_best_asset_col(ticker1, ticker2, ticker3, ticker4, ticker5, ticker6, ticker7, ticker8, ticker9, ticker10, best_asset, backtest, colors), textcolor = tab_lab_text_col, style = label.style_label_left, size = size.normal)
+    else
+        label.set_xy(strategyLabel, bar_index + 5, eq)
+
+//strategyLabel
+if backtest and barstate.islast
+    if na(strategyLabel)
+        strategyLabel := label.new(bar_index + 5, eq, f_remove_exchange_name(best_asset),     color = f_best_asset_col(ticker1, ticker2, ticker3, ticker4, ticker5, ticker6, ticker7, ticker8, ticker9, ticker10, best_asset, backtest, colors), textcolor = f_best_asset_col(ticker1, ticker2, ticker3, ticker4, ticker5, ticker6, ticker7, ticker8, ticker9, ticker10, best_asset, backtest, colors), style = label.style_label_left)
+    else
+        label.set_xy(strategyLabel, bar_index + 5, eq)
+
+// Asset 1
+    if show_asset1
+        if na(asset1Label)
+            asset1Label := label.new(bar_index + 5, bah1, str.tostring(f_remove_exchange_name(ticker1)), color=asset1_col, textcolor=tab_lab_text_col, style=label.style_label_left)
+        else
+            label.set_xy(asset1Label, bar_index + 5, bah1)
+    else
+        if not na(asset1Label)
+            label.delete(asset1Label)
+            asset1Label := na
+
+    // Asset 2
+    if show_asset2
+        if na(asset2Label)
+            asset2Label := label.new(bar_index + 5, bah2, str.tostring(f_remove_exchange_name(ticker2)), color=asset2_col, textcolor=tab_lab_text_col, style=label.style_label_left)
+        else
+            label.set_xy(asset2Label, bar_index + 5, bah2)
+    else
+        if not na(asset2Label)
+            label.delete(asset2Label)
+            asset2Label := na
+
+    // Asset 3
+    if show_asset3
+        if na(asset3Label)
+            asset3Label := label.new(bar_index + 5, bah3, str.tostring(f_remove_exchange_name(ticker3)), color=asset3_col, textcolor=tab_lab_text_col, style=label.style_label_left)
+        else
+            label.set_xy(asset3Label, bar_index + 5, bah3)
+    else
+        if not na(asset3Label)
+            label.delete(asset3Label)
+            asset3Label := na
+
+    // Asset 4
+    if show_asset4
+        if na(asset4Label)
+            asset4Label := label.new(bar_index + 5, bah4, str.tostring(f_remove_exchange_name(ticker4)), color=asset4_col, textcolor=tab_lab_text_col, style=label.style_label_left)
+        else
+            label.set_xy(asset4Label, bar_index + 5, bah4)
+    else
+        if not na(asset4Label)
+            label.delete(asset4Label)
+            asset4Label := na
+
+    // Asset 5
+    if show_asset5
+        if na(asset5Label)
+            asset5Label := label.new(bar_index + 5, bah5, str.tostring(f_remove_exchange_name(ticker5)), color=asset5_col, textcolor=tab_lab_text_col, style=label.style_label_left)
+        else
+            label.set_xy(asset5Label, bar_index + 5, bah5)
+    else
+        if not na(asset5Label)
+            label.delete(asset5Label)
+            asset5Label := na
+
+    // Asset 6
+    if show_asset6
+        if na(asset6Label)
+            asset6Label := label.new(bar_index + 5, bah6, str.tostring(f_remove_exchange_name(ticker6)), color=asset6_col, textcolor=tab_lab_text_col, style=label.style_label_left)
+        else
+            label.set_xy(asset6Label, bar_index + 5, bah6)
+    else
+        if not na(asset6Label)
+            label.delete(asset6Label)
+            asset6Label := na
+
+    // Asset 7
+    if show_asset7
+        if na(asset7Label)
+            asset7Label := label.new(bar_index + 5, bah7, str.tostring(f_remove_exchange_name(ticker7)), color=asset7_col, textcolor=tab_lab_text_col, style=label.style_label_left)
+        else
+            label.set_xy(asset7Label, bar_index + 5, bah7)
+    else
+        if not na(asset7Label)
+            label.delete(asset7Label)
+            asset7Label := na
+
+    // Asset 8
+    if show_asset8
+        if na(asset8Label)
+            asset8Label := label.new(bar_index + 5, bah8, str.tostring(f_remove_exchange_name(ticker8)), color=asset8_col, textcolor=tab_lab_text_col, style=label.style_label_left)
+        else
+            label.set_xy(asset8Label, bar_index + 5, bah8)
+    else
+        if not na(asset8Label)
+            label.delete(asset8Label)
+            asset8Label := na
+
+    // Asset 9
+    if show_asset9
+        if na(asset9Label)
+            asset9Label := label.new(bar_index + 5, bah9, str.tostring(f_remove_exchange_name(ticker9)), color=asset9_col, textcolor=tab_lab_text_col, style=label.style_label_left)
+        else
+            label.set_xy(asset9Label, bar_index + 5, bah9)
+    else
+        if not na(asset9Label)
+            label.delete(asset9Label)
+            asset9Label := na
+
+    // Asset 10
+    if show_asset10
+        if na(asset10Label)
+            asset10Label := label.new(bar_index + 5, bah10, str.tostring(f_remove_exchange_name(ticker10)), color=asset10_col, textcolor=tab_lab_text_col, style=label.style_label_left)
+        else
+            label.set_xy(asset10Label, bar_index + 5, bah10)
+    else
+        if not na(asset10Label)
+            label.delete(asset10Label)
+            asset10Label := na
+
+
+
+//──────────────────────────────
+// TABLES
+//──────────────────────────────
+var table T = table.new(position.bottom_right, 12, 12, bgcolor=color.new(color.gray, 80), frame_color=color.white, frame_width=2)
+var table p = table.new(position.top_left, 12, 15, border_width=1, frame_width=1, frame_color=color.white)
+var table B = table.new(position.bottom_center, 1, 2, bgcolor=color.new(color.gray, 80), frame_color=color.white, frame_width=2)
+
+if barstate.islast
+    // Table with Trend Scores
+    table.cell(T, 0, 0, text = "")
+    table.cell(T, 0, 1, text = str.tostring(f_remove_exchange_name(ticker1)), text_color = asset1_col)
+    table.cell(T, 0, 2, text = str.tostring(f_remove_exchange_name(ticker2)), text_color = asset2_col)
+    table.cell(T, 0, 3, text = str.tostring(f_remove_exchange_name(ticker3)), text_color = asset3_col)
+    table.cell(T, 0, 4, text = str.tostring(f_remove_exchange_name(ticker4)), text_color = asset4_col)
+    table.cell(T, 0, 5, text = str.tostring(f_remove_exchange_name(ticker5)), text_color = asset5_col)
+    table.cell(T, 0, 6, text = str.tostring(f_remove_exchange_name(ticker6)), text_color = asset6_col)
+    table.cell(T, 0, 7, text = str.tostring(f_remove_exchange_name(ticker7)), text_color = asset7_col)
+    table.cell(T, 0, 8, text = str.tostring(f_remove_exchange_name(ticker8)), text_color = asset8_col)
+    table.cell(T, 0, 9, text = str.tostring(f_remove_exchange_name(ticker9)), text_color = asset9_col)
+    table.cell(T, 0, 10, text = str.tostring(f_remove_exchange_name(ticker10)), text_color = asset10_col)
+    // USD column
+    table.cell(T, 0, 11, text = "USD", text_color = usd_col)
+
+    table.cell(T, 1, 0, text = str.tostring(f_remove_exchange_name(ticker1)), text_color = tab_lab_text_col)
+    table.cell(T, 2, 0, text = str.tostring(f_remove_exchange_name(ticker2)), text_color = tab_lab_text_col)
+    table.cell(T, 3, 0, text = str.tostring(f_remove_exchange_name(ticker3)), text_color = tab_lab_text_col)
+    table.cell(T, 4, 0, text = str.tostring(f_remove_exchange_name(ticker4)), text_color = tab_lab_text_col)
+    table.cell(T, 5, 0, text = str.tostring(f_remove_exchange_name(ticker5)), text_color = tab_lab_text_col)
+    table.cell(T, 6, 0, text = str.tostring(f_remove_exchange_name(ticker6)), text_color = tab_lab_text_col)
+    table.cell(T, 7, 0, text = str.tostring(f_remove_exchange_name(ticker7)), text_color = tab_lab_text_col)
+    table.cell(T, 8, 0, text = str.tostring(f_remove_exchange_name(ticker8)), text_color = tab_lab_text_col)
+    table.cell(T, 9, 0, text = str.tostring(f_remove_exchange_name(ticker9)), text_color = tab_lab_text_col)
+    table.cell(T, 10, 0, text = str.tostring(f_remove_exchange_name(ticker10)), text_color = tab_lab_text_col)
+    table.cell(T, 11, 0, text = "USD", text_color = tab_lab_text_col)
+
+    // Table B: Best Performing Asset
+    table.cell(B, 0, 0, text = "Best Performing Asset:", text_color = tab_lab_text_col)
+    table.cell(B, 0, 1, text = str.tostring(f_remove_exchange_name(best_asset[1])), text_color = tab_lab_text_col)
+
+    // Performance Metrics Table (if enabled)
+    if plot_metric_table
+        a_strategy = f_PerformanceMetrics(eq, f_since(backtest), backtest, dd_eq)
+        a1 = f_PerformanceMetrics(bah1, f_since(backtest), backtest, dd1)
+        a2 = f_PerformanceMetrics(bah2, f_since(backtest), backtest, dd2)
+        a3 = f_PerformanceMetrics(bah3, f_since(backtest), backtest, dd3)
+        a4 = f_PerformanceMetrics(bah4, f_since(backtest), backtest, dd4)
+        a5 = f_PerformanceMetrics(bah5, f_since(backtest), backtest, dd5)
+        a6 = f_PerformanceMetrics(bah6, f_since(backtest), backtest, dd6)
+        a7 = f_PerformanceMetrics(bah7, f_since(backtest), backtest, dd7)
+        a8 = f_PerformanceMetrics(bah8, f_since(backtest), backtest, dd8)
+        a9 = f_PerformanceMetrics(bah9, f_since(backtest), backtest, dd9)
+        a10 = f_PerformanceMetrics(bah10, f_since(backtest), backtest, dd10)
+        f_PerfMetricTable(ticker1, ticker2, ticker3, ticker4, ticker5, ticker6, ticker7, ticker8, ticker9, ticker10, a_strategy, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, colors)
+
+
+prev_best = best_asset[1]
+curr_best = best_asset[0]
+isNewBest  = curr_best != prev_best
+
+botId     = "5kMLqC4A"
+schemaNum = "2"
+
+if isNewBest
+    // SELL the old asset
+    sellMsg = '{'
+      + '"action":"sell",'
+      + '"ticker":"'         + f_remove_exchange_name(prev_best) + '",'
+      + '"order_size":"100%",'
+      + '"position_size":"0",'
+      + '"schema":"'         + schemaNum + '",'
+      + '"bot_id":"'         + botId + '"'
+      + '}'
+    alert(sellMsg, alert.freq_once_per_bar_close)
+
+    // BUY  the new asset
+    buyMsg  = '{'
+      + '"action":"buy",'
+      + '"ticker":"'         + f_remove_exchange_name(curr_best) + '",'
+      + '"order_size":"100%",'
+      + '"position_size":"1",'
+      + '"schema":"'         + schemaNum + '",'
+      + '"bot_id":"'         + botId + '"'
+      + '}'
+    alert(buyMsg, alert.freq_once_per_bar_close)
