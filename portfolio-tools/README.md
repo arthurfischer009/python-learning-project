@@ -36,6 +36,8 @@ Stock B: 30.00%
 Stock C: 20.00%
 ```
 
+![Portfolio Allocation](../docs/images/portfolio_allocation.png)
+
 **Interpretation:**
 - 50% deines Portfolios ist in Stock A (höchstes Risiko bei A)
 - 30% in Stock B

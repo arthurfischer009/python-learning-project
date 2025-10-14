@@ -35,6 +35,14 @@ Preisdifferenz = (155 - 145) / 145 = 0.069 = 6.9%
 Da 6.9% > 5% → Der Preis ist zu stark gestiegen → HALTEN
 ```
 
+![Trading Bot Strategy](../docs/images/trading_bot_strategy.png)
+
+**Legende:**
+- 🔵 Blaue Linie: Aktienkurs
+- 🟣 Lila gestrichelte Linie: Moving Average
+- 🟢 Grüne Zone: BUY Signal (Preis über MA, innerhalb Risikotoleranz)
+- 🔴 Rote Zone: SELL Signal (Preis unter MA)
+
 #### Nächste Schritte:
 
 - [ ] Echte Marktdaten von einer API abrufen (z.B. yfinance)

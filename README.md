@@ -4,6 +4,8 @@ Ein Portfolio von Python-Projekten mit Fokus auf **Fintech**, **Trading**, **Blo
 
 > Dieses Repository dokumentiert meine Lernreise in Python-Programmierung mit praktischen Projekten aus dem Finanzbereich.
 
+![Project Architecture](docs/images/project_architecture.png)
+
 ---
 
 ## 📋 Inhaltsverzeichnis
@@ -254,6 +256,8 @@ Dieses Repository demonstriert folgende Fähigkeiten:
 ### Lernkurve & Progression
 
 **Beginner → Intermediate → Advanced**
+
+![Learning Path](docs/images/learning_path.png)
 
 1. **Portfolio Allocation** (Beginner)
    - Grundlegende Python-Syntax
