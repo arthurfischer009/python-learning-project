@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Level Up - Play</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="game-screen">
+    <div class="container">
+        <!-- Game Over Screen -->
+        <div id="game-over-screen" class="game-card hidden">
+            <div class="celebration">🎉</div>
+            <h1 class="title">Game Complete!</h1>
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="completed-count">0</div>
+                    <div class="stat-label">Completed</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="skipped-count">0</div>
+                    <div class="stat-label">Skipped</div>
+                </div>
+            </div>
+            <button id="reset-btn" class="btn-primary">Start New Game</button>
+        </div>
+
+        <!-- Active Game Screen -->
+        <div id="game-active-screen" class="game-card">
+            <div class="level-header">
+                <span class="level-badge" id="level-badge">Level 1</span>
+                <span class="skips-badge" id="skips-badge">2 skips left</span>
+            </div>
+
+            <div class="timer-container">
+                <div class="timer" id="timer">00:00</div>
+                <div class="timer-label">Time on this level</div>
+                <div class="timer-warning hidden" id="timer-warning">⚠️ 1 hour limit!</div>
+            </div>
+
+            <div class="current-task-container">
+                <h2 class="current-task" id="current-task">Loading...</h2>
+            </div>
+
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div class="progress-text" id="progress-text">1 / 5</div>
+
+            <div class="actions">
+                <button id="skip-btn" class="btn-secondary">
+                    Skip Level
+                </button>
+                <button id="complete-btn" class="btn-primary">
+                    Complete ✓
+                </button>
+            </div>
+
+            <button id="quit-btn" class="btn-quit">Reset Game</button>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

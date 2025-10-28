@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Level Up - Setup</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="setup-screen">
+    <div class="container">
+        <div class="setup-card fade-in">
+            <h1 class="title">🎯 Level Up</h1>
+            <p class="subtitle">Set your levels before you begin</p>
+
+            <div class="tasks-input-area">
+                <div id="tasks-list"></div>
+
+                <div class="input-group">
+                    <input
+                        type="text"
+                        id="task-input"
+                        placeholder="Add a level (max 1 hour each)..."
+                        maxlength="100"
+                    >
+                    <button id="add-task-btn" class="btn-add">+</button>
+                </div>
+
+                <p class="hint">Each level should take max 1 hour</p>
+            </div>
+
+            <div class="actions">
+                <button id="start-game-btn" class="btn-primary" disabled>
+                    Start Game
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const taskInput = document.getElementById('task-input');
+        const addTaskBtn = document.getElementById('add-task-btn');
+        const startGameBtn = document.getElementById('start-game-btn');
+        const tasksList = document.getElementById('tasks-list');
+
+        let tasks = [];
+
+        function updateTasksList() {
+            tasksList.innerHTML = '';
+
+            tasks.forEach((task, index) => {
+                const taskItem = document.createElement('div');
+                taskItem.className = 'task-item slide-in';
+                taskItem.innerHTML = `
+                    <span class="task-number">Level ${index + 1}</span>
+                    <span class="task-text">${task}</span>
+                    <button class="btn-remove" onclick="removeTask(${index})">×</button>
+                `;
+                tasksList.appendChild(taskItem);
+            });
+
+            startGameBtn.disabled = tasks.length === 0;
+        }
+
+        function addTask() {
+            const task = taskInput.value.trim();
+            if (task) {
+                tasks.push(task);
+                taskInput.value = '';
+                updateTasksList();
+                taskInput.focus();
+            }
+        }
+
+        function removeTask(index) {
+            tasks.splice(index, 1);
+            updateTasksList();
+        }
+
+        addTaskBtn.addEventListener('click', addTask);
+
+        taskInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addTask();
+            }
+        });
+
+        startGameBtn.addEventListener('click', async () => {
+            if (tasks.length === 0) return;
+
+            startGameBtn.disabled = true;
+            startGameBtn.textContent = 'Loading...';
+
+            try {
+                const response = await fetch('/api/setup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ tasks })
+                });
+
+                if (response.ok) {
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                startGameBtn.disabled = false;
+                startGameBtn.textContent = 'Start Game';
+            }
+        });
+
+        // Focus input on load
+        taskInput.focus();
+    </script>
+</body>
+</html>
