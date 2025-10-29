@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Level Up - Todo Game</title>
+    <style>
+        /* Import beautiful font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        /* CSS Variables */
+        :root {
+            --primary-color: #007AFF;
+            --primary-hover: #0051D5;
+            --success-color: #34C759;
+            --danger-color: #FF3B30;
+            --warning-color: #FF9500;
+            --text-primary: #1C1C1E;
+            --text-secondary: #8E8E93;
+            --background: #F2F2F7;
+            --card-background: #FFFFFF;
+            --border-radius: 20px;
+            --shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+            --shadow-hover: 0 20px 60px rgba(0, 0, 0, 0.12);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: var(--card-background);
+            border-radius: var(--border-radius);
+            padding: 40px 30px;
+            box-shadow: var(--shadow);
+            transition: all 0.3s ease;
+            animation: fade-in 0.5s ease;
+        }
+
+        .card:hover {
+            box-shadow: var(--shadow-hover);
+        }
+
+        .title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-bottom: 40px;
+            font-weight: 400;
+        }
+
+        .hint {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-top: 12px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        #task-input {
+            flex: 1;
+            padding: 14px 18px;
+            font-size: 1rem;
+            border: 2px solid #E5E5EA;
+            border-radius: 12px;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.2s ease;
+            outline: none;
+        }
+
+        #task-input:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
+        }
+
+        .btn-add {
+            width: 50px;
+            height: 50px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1.8rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-weight: 300;
+        }
+
+        .btn-add:hover {
+            background: var(--primary-hover);
+            transform: scale(1.05);
+        }
+
+        .btn-add:active {
+            transform: scale(0.95);
+        }
+
+        .btn-primary {
+            width: 100%;
+            padding: 16px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0, 122, 255, 0.3);
+        }
+
+        .btn-primary:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            padding: 14px 24px;
+            background: #F2F2F7;
+            color: var(--text-primary);
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: #E5E5EA;
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .btn-remove {
+            background: #FF3B30;
+            color: white;
+            border: none;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            font-size: 1.4rem;
+            line-height: 1;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-weight: 300;
+        }
+
+        .btn-remove:hover {
+            transform: scale(1.1);
+            background: #D32F2F;
+        }
+
+        .btn-quit {
+            width: 100%;
+            margin-top: 20px;
+            padding: 12px;
+            background: transparent;
+            color: var(--text-secondary);
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .btn-quit:hover {
+            background: #F2F2F7;
+            color: var(--text-primary);
+        }
+
+        #tasks-list {
+            margin-bottom: 20px;
+        }
+
+        .task-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 16px;
+            background: #F9F9F9;
+            border-radius: 10px;
+            margin-bottom: 8px;
+            transition: all 0.2s ease;
+            animation: slide-in 0.3s ease;
+        }
+
+        .task-item:hover {
+            background: #F2F2F7;
+            transform: translateX(4px);
+        }
+
+        .task-number {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            background: rgba(0, 122, 255, 0.1);
+            padding: 4px 10px;
+            border-radius: 6px;
+            white-space: nowrap;
+        }
+
+        .task-text {
+            flex: 1;
+            font-size: 0.95rem;
+            color: var(--text-primary);
+        }
+
+        .level-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .level-badge {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            background: rgba(0, 122, 255, 0.1);
+            padding: 8px 16px;
+            border-radius: 20px;
+        }
+
+        .skips-badge {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .timer-container {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .timer {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            font-variant-numeric: tabular-nums;
+            margin-bottom: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .timer-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+
+        .timer-warning {
+            color: var(--warning-color);
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-top: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        .timer.warning {
+            color: var(--warning-color);
+        }
+
+        .timer.danger {
+            color: var(--danger-color);
+            animation: shake 0.5s infinite;
+        }
+
+        .current-task-container {
+            text-align: center;
+            margin-bottom: 40px;
+            min-height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .current-task {
+            font-size: 1.8rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #F2F2F7;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary-color), #5E5CE6);
+            border-radius: 10px;
+            transition: width 0.5s ease;
+        }
+
+        .progress-text {
+            text-align: center;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 30px;
+            font-weight: 500;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .celebration {
+            font-size: 5rem;
+            text-align: center;
+            margin-bottom: 20px;
+            animation: bounce 1s infinite;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin: 40px 0;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            margin-top: 8px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @keyframes fade-in {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes slide-in {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        @keyframes shake {
+            0%, 100% {
+                transform: translateX(0);
+            }
+            25% {
+                transform: translateX(-5px);
+            }
+            75% {
+                transform: translateX(5px);
+            }
+        }
+
+        @keyframes bounce {
+            0%, 100% {
+                transform: translateY(0);
+            }
+            50% {
+                transform: translateY(-20px);
+            }
+        }
+
+        @media (max-width: 480px) {
+            .title {
+                font-size: 2rem;
+            }
+
+            .current-task {
+                font-size: 1.5rem;
+            }
+
+            .timer {
+                font-size: 2.5rem;
+            }
+
+            .card {
+                padding: 30px 20px;
+            }
+
+            .actions {
+                flex-direction: column;
+            }
+
+            .btn-secondary {
+                width: 100%;
+            }
+        }
+
+        @supports (-webkit-touch-callout: none) {
+            body {
+                -webkit-tap-highlight-color: transparent;
+            }
+
+            input {
+                font-size: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Setup Screen -->
+        <div id="setup-screen" class="card">
+            <h1 class="title">🎯 Level Up</h1>
+            <p class="subtitle">Set your levels before you begin</p>
+
+            <div class="tasks-input-area">
+                <div id="tasks-list"></div>
+
+                <div class="input-group">
+                    <input
+                        type="text"
+                        id="task-input"
+                        placeholder="Add a level (max 1 hour each)..."
+                        maxlength="100"
+                    >
+                    <button id="add-task-btn" class="btn-add">+</button>
+                </div>
+
+                <p class="hint">Each level should take max 1 hour</p>
+            </div>
+
+            <div class="actions">
+                <button id="start-game-btn" class="btn-primary" disabled>
+                    Start Game
+                </button>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="card hidden">
+            <div class="level-header">
+                <span class="level-badge" id="level-badge">Level 1</span>
+                <span class="skips-badge" id="skips-badge">2 skips left</span>
+            </div>
+
+            <div class="timer-container">
+                <div class="timer" id="timer">00:00</div>
+                <div class="timer-label">Time on this level</div>
+                <div class="timer-warning hidden" id="timer-warning">⚠️ 1 hour limit!</div>
+            </div>
+
+            <div class="current-task-container">
+                <h2 class="current-task" id="current-task">Loading...</h2>
+            </div>
+
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div class="progress-text" id="progress-text">1 / 5</div>
+
+            <div class="actions">
+                <button id="skip-btn" class="btn-secondary">
+                    Skip Level
+                </button>
+                <button id="complete-btn" class="btn-primary">
+                    Complete ✓
+                </button>
+            </div>
+
+            <button id="quit-btn" class="btn-quit">Reset Game</button>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="game-over-screen" class="card hidden">
+            <div class="celebration">🎉</div>
+            <h1 class="title">Game Complete!</h1>
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="completed-count">0</div>
+                    <div class="stat-label">Completed</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="skipped-count">0</div>
+                    <div class="stat-label">Skipped</div>
+                </div>
+            </div>
+            <button id="reset-btn" class="btn-primary">Start New Game</button>
+        </div>
+    </div>
+
+    <script>
+        // Game State
+        let gameState = {
+            tasks: [],
+            currentLevel: 0,
+            skipsUsed: 0,
+            completedTasks: [],
+            gameStarted: false,
+            startTime: null
+        };
+
+        let timerInterval = null;
+
+        // DOM Elements
+        const setupScreen = document.getElementById('setup-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const taskInput = document.getElementById('task-input');
+        const addTaskBtn = document.getElementById('add-task-btn');
+        const startGameBtn = document.getElementById('start-game-btn');
+        const tasksList = document.getElementById('tasks-list');
+        const currentTaskEl = document.getElementById('current-task');
+        const levelBadge = document.getElementById('level-badge');
+        const skipsBadge = document.getElementById('skips-badge');
+        const timerEl = document.getElementById('timer');
+        const timerWarning = document.getElementById('timer-warning');
+        const progressFill = document.getElementById('progress-fill');
+        const progressText = document.getElementById('progress-text');
+        const completeBtn = document.getElementById('complete-btn');
+        const skipBtn = document.getElementById('skip-btn');
+        const quitBtn = document.getElementById('quit-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const completedCount = document.getElementById('completed-count');
+        const skippedCount = document.getElementById('skipped-count');
+
+        // Setup Screen Functions
+        function updateTasksList() {
+            tasksList.innerHTML = '';
+
+            gameState.tasks.forEach((task, index) => {
+                const taskItem = document.createElement('div');
+                taskItem.className = 'task-item';
+                taskItem.innerHTML = `
+                    <span class="task-number">Level ${index + 1}</span>
+                    <span class="task-text">${task}</span>
+                    <button class="btn-remove" onclick="removeTask(${index})">×</button>
+                `;
+                tasksList.appendChild(taskItem);
+            });
+
+            startGameBtn.disabled = gameState.tasks.length === 0;
+        }
+
+        function addTask() {
+            const task = taskInput.value.trim();
+            if (task) {
+                gameState.tasks.push(task);
+                taskInput.value = '';
+                updateTasksList();
+                taskInput.focus();
+            }
+        }
+
+        window.removeTask = function(index) {
+            gameState.tasks.splice(index, 1);
+            updateTasksList();
+        };
+
+        function startGame() {
+            if (gameState.tasks.length === 0) return;
+
+            gameState.gameStarted = true;
+            gameState.currentLevel = 0;
+            gameState.skipsUsed = 0;
+            gameState.completedTasks = [];
+
+            setupScreen.classList.add('hidden');
+            gameScreen.classList.remove('hidden');
+
+            updateGameScreen();
+            startTimer();
+        }
+
+        // Timer Functions
+        function startTimer() {
+            gameState.startTime = Date.now();
+
+            if (timerInterval) {
+                clearInterval(timerInterval);
+            }
+
+            timerInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - gameState.startTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+
+                timerEl.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+                timerEl.classList.remove('warning', 'danger');
+                timerWarning.classList.add('hidden');
+
+                if (minutes >= 50 && minutes < 60) {
+                    timerWarning.classList.remove('hidden');
+                    timerEl.classList.add('warning');
+                }
+
+                if (minutes >= 60) {
+                    timerEl.classList.add('danger');
+                }
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
+        // Game Screen Functions
+        function updateGameScreen() {
+            if (gameState.currentLevel >= gameState.tasks.length) {
+                showGameOver();
+                return;
+            }
+
+            const task = gameState.tasks[gameState.currentLevel];
+            const level = gameState.currentLevel + 1;
+            const totalLevels = gameState.tasks.length;
+            const skipsRemaining = 2 - gameState.skipsUsed;
+
+            currentTaskEl.textContent = task;
+            levelBadge.textContent = `Level ${level}`;
+            skipsBadge.textContent = `${skipsRemaining} skip${skipsRemaining !== 1 ? 's' : ''} left`;
+            skipBtn.disabled = skipsRemaining === 0;
+
+            const progress = (level / totalLevels) * 100;
+            progressFill.style.width = `${progress}%`;
+            progressText.textContent = `${level} / ${totalLevels}`;
+
+            currentTaskEl.style.animation = 'none';
+            setTimeout(() => {
+                currentTaskEl.style.animation = 'fade-in 0.5s ease';
+            }, 10);
+        }
+
+        function completeTask() {
+            completeBtn.disabled = true;
+            completeBtn.textContent = 'Level Up! 🎉';
+
+            gameState.completedTasks.push(gameState.tasks[gameState.currentLevel]);
+            gameState.currentLevel++;
+
+            setTimeout(() => {
+                completeBtn.disabled = false;
+                completeBtn.textContent = 'Complete ✓';
+                updateGameScreen();
+                startTimer();
+            }, 800);
+        }
+
+        function skipTask() {
+            if (gameState.skipsUsed >= 2) {
+                alert('Maximum skips reached!');
+                return;
+            }
+
+            if (!confirm('Skip this level? You can only skip 2 levels total.')) {
+                return;
+            }
+
+            gameState.skipsUsed++;
+            gameState.currentLevel++;
+
+            updateGameScreen();
+            startTimer();
+        }
+
+        function showGameOver() {
+            stopTimer();
+            gameScreen.classList.add('hidden');
+            gameOverScreen.classList.remove('hidden');
+
+            const completed = gameState.completedTasks.length;
+            const skipped = gameState.tasks.length - completed;
+
+            completedCount.textContent = completed;
+            skippedCount.textContent = skipped;
+        }
+
+        function resetGame() {
+            if (gameState.gameStarted && !confirm('Are you sure you want to reset the game? All progress will be lost.')) {
+                return;
+            }
+
+            stopTimer();
+
+            gameState = {
+                tasks: [],
+                currentLevel: 0,
+                skipsUsed: 0,
+                completedTasks: [],
+                gameStarted: false,
+                startTime: null
+            };
+
+            gameScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            setupScreen.classList.remove('hidden');
+
+            taskInput.value = '';
+            timerEl.textContent = '00:00';
+            timerEl.classList.remove('warning', 'danger');
+            timerWarning.classList.add('hidden');
+
+            updateTasksList();
+            taskInput.focus();
+        }
+
+        // Event Listeners
+        addTaskBtn.addEventListener('click', addTask);
+
+        taskInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addTask();
+            }
+        });
+
+        startGameBtn.addEventListener('click', startGame);
+        completeBtn.addEventListener('click', completeTask);
+        skipBtn.addEventListener('click', skipTask);
+        quitBtn.addEventListener('click', resetGame);
+        resetBtn.addEventListener('click', resetGame);
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !completeBtn.disabled && !gameScreen.classList.contains('hidden')) {
+                completeTask();
+            }
+        });
+
+        // Initialize
+        taskInput.focus();
+    </script>
+</body>
+</html>
